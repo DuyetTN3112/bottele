@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Shop - Bo Noti</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: Arial, sans-serif; background: #f5f5f5; min-height: 100vh; }
+        .navbar { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 15px 30px; display: flex; justify-content: space-between; align-items: center; }
+        .navbar h1 { font-size: 1.5em; }
+        .navbar a { color: white; text-decoration: none; padding: 8px 15px; background: rgba(255,255,255,0.2); border-radius: 5px; }
+        .navbar a:hover { background: rgba(255,255,255,0.3); }
+        .container { max-width: 1000px; margin: 30px auto; padding: 0 20px; }
+        .message { background: #d4edda; color: #155724; padding: 15px; border-radius: 5px; margin-bottom: 20px; text-align: center; }
+        .products { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 20px; }
+        .product { background: white; border-radius: 10px; padding: 20px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); text-align: center; }
+        .product-icon { font-size: 60px; margin-bottom: 15px; }
+        .product h3 { color: #333; margin-bottom: 10px; }
+        .product p { color: #666; margin-bottom: 15px; font-size: 0.9em; }
+        .product .price { color: #667eea; font-size: 1.5em; font-weight: bold; margin-bottom: 15px; }
+        .btn-buy { width: 100%; padding: 12px; background: #28a745; color: white; border: none; border-radius: 5px; font-size: 16px; cursor: pointer; font-weight: bold; }
+        .btn-buy:hover { background: #218838; }
+        .empty { text-align: center; padding: 50px; color: #999; }
+    </style>
+</head>
+<body>
+    <div class="navbar">
+        <h1>🛍️ Bo Noti Shop</h1>
+        <div>
+            <span>👤 <%= user.username %></span>
+            <a href="/auth/logout">Đăng xuất</a>
+        </div>
+    </div>
+    
+    <div class="container">
+        <% if (message) { %>
+            <div class="message"><%= message %></div>
+        <% } %>
+        
+        <% if (products.length === 0) { %>
+            <div class="empty">
+                <h2>😢 Chưa có sản phẩm nào</h2>
+                <p>Vui lòng quay lại sau!</p>
+            </div>
+        <% } else { %>
+            <div class="products">
+                <% products.forEach(function(product) { %>
+                    <div class="product">
+                        <div class="product-icon"><%= product.image %></div>
+                        <h3><%= product.name %></h3>
+                        <p><%= product.description || 'Sản phẩm chất lượng cao' %></p>
+                        <div class="price"><%= product.price.toLocaleString('vi-VN') %> VND</div>
+                        <form action="/shop/buy/<%= product._id %>" method="POST">
+                            <button type="submit" class="btn-buy">🛒 Mua ngay</button>
+                        </form>
+                    </div>
+                <% }); %>
+            </div>
+        <% } %>
+    </div>
+</body>
+</html>
