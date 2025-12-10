@@ -15,13 +15,20 @@ router.post('/login', async (req, res) => {
     try {
         const { username, password } = req.body;
         const user = await User.findOne({ username });
-        
+
         if (!user || !user.comparePassword(password)) {
             return res.render('login', { error: 'Sai tên đăng nhập hoặc mật khẩu!' });
         }
 
         req.session.user = { id: user._id, username: user.username, role: user.role };
-        res.redirect(user.role === 'admin' ? '/admin' : '/shop');
+
+        if (user.role === 'admin') {
+            res.redirect('/admin');
+        } else if (user.role === 'partner') {
+            res.redirect('/partner');
+        } else {
+            res.redirect('/shop');
+        }
     } catch (err) {
         res.render('login', { error: 'Đã xảy ra lỗi!' });
     }
@@ -39,7 +46,7 @@ router.get('/register', (req, res) => {
 router.post('/register', async (req, res) => {
     try {
         const { username, password, role } = req.body;
-        
+
         const existingUser = await User.findOne({ username });
         if (existingUser) {
             return res.render('register', { error: 'Tên đăng nhập đã tồn tại!' });
@@ -47,7 +54,7 @@ router.post('/register', async (req, res) => {
 
         const user = new User({ username, password, role: role || 'user' });
         await user.save();
-        
+
         res.redirect('/auth/login');
     } catch (err) {
         res.render('register', { error: 'Đã xảy ra lỗi!' });

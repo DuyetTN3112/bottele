@@ -37,7 +37,7 @@ router.post('/buy/:productId', isAuthenticated, async (req, res) => {
             totalPrice: product.price
         });
         await order.save();
-        console.log(`📦 Đơn hàng mới: ${order._id} - Chờ background job gửi thông báo`);
+        
 
         const products = await Product.find();
         res.render('shop', { 
@@ -46,7 +46,7 @@ router.post('/buy/:productId', isAuthenticated, async (req, res) => {
             message: `✅ Đã mua thành công: ${product.name}!` 
         });
     } catch (err) {
-        console.error(err);
+        
         res.redirect('/shop');
     }
 });
