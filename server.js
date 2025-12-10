@@ -3,14 +3,14 @@ const express = require('express');
 const mongoose = require('mongoose');
 const session = require('express-session');
 const MongoStore = require('connect-mongo');
-const https = require('https');
 const path = require('path');
 
 // Import routes
 const authRoutes = require('./routes/auth');
 const shopRoutes = require('./routes/shop');
 const adminRoutes = require('./routes/admin');
-const { router: telegramRoutes } = require('./routes/telegram');
+// Telegram webhook được xử lý bởi Python bot (bot_sheet.py)
+// const { router: telegramRoutes } = require('./routes/telegram');
 
 const app = express();
 
@@ -18,8 +18,6 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const DB_URL = process.env.DB_URL;
 const SESSION_SECRET = process.env.SESSION_SECRET || 'default_secret_key';
-const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN;
-const SERVER_URL = process.env.SERVER_URL;
 
 // ================= MIDDLEWARE =================
 app.set('view engine', 'ejs');
@@ -47,46 +45,18 @@ app.get('/', (req, res) => {
 app.use('/auth', authRoutes);
 app.use('/shop', shopRoutes);
 app.use('/admin', adminRoutes);
-app.use('/', telegramRoutes); // Webhook Telegram
-
-// ================= TỰ ĐỘNG SET WEBHOOK TELEGRAM =================
-function setWebhookAuto() {
-    if (!SERVER_URL) {
-        console.log('⚠️ SERVER_URL chưa được cấu hình (cần khi deploy để nhận thông báo Telegram)');
-        return;
-    }
-    if (!TELEGRAM_TOKEN) {
-        console.log('⚠️ Thiếu TELEGRAM_TOKEN');
-        return;
-    }
-
-    const webhookUrl = `${SERVER_URL}/${TELEGRAM_TOKEN}`;
-    const apiUrl = `https://api.telegram.org/bot${TELEGRAM_TOKEN}/setWebhook?url=${webhookUrl}`;
-
-    https.get(apiUrl, (res) => {
-        if (res.statusCode === 200) {
-            console.log(`✅ Đã set webhook Telegram: ${webhookUrl}`);
-        } else {
-            console.log(`❌ Lỗi set webhook: ${res.statusCode}`);
-        }
-    }).on('error', (e) => {
-        console.error('❌ Lỗi kết nối Telegram:', e.message);
-    });
-}
+// Telegram webhook được xử lý bởi Python bot (bot_sheet.py)
 
 // ================= KẾT NỐI DATABASE & CHẠY SERVER =================
 mongoose.connect(DB_URL)
     .then(() => {
         console.log('✅ Đã kết nối MongoDB thành công!');
         
-        // Set webhook Telegram
-        setWebhookAuto();
-        
         app.listen(PORT, () => {
             console.log(`🚀 Server đang chạy tại: http://localhost:${PORT}`);
             console.log(`📝 Đăng ký: http://localhost:${PORT}/auth/register`);
             console.log(`🔐 Đăng nhập: http://localhost:${PORT}/auth/login`);
-            console.log(`\n📱 Telegram Bot: /start rồi /login admin admin123`);
+            console.log(`\n📦 Đơn hàng mới sẽ được Python bot quét và gửi Telegram`);
         });
     })
     .catch((err) => {

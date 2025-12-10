@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const Product = require('../models/Product');
 const Order = require('../models/Order');
-const { sendNotificationToAll } = require('./telegram');
+// Đã xóa sendNotificationToAll - Background job Python sẽ quét DB và gửi thông báo
 
 // Middleware kiểm tra đăng nhập
 function isAuthenticated(req, res, next) {
@@ -28,7 +28,8 @@ router.post('/buy/:productId', isAuthenticated, async (req, res) => {
             return res.redirect('/shop');
         }
 
-        // Tạo đơn hàng
+        // Tạo đơn hàng (notified mặc định là false)
+        // Background job Python sẽ quét DB và gửi thông báo Telegram
         const order = new Order({
             user: req.session.user.id,
             product: product._id,
@@ -36,10 +37,7 @@ router.post('/buy/:productId', isAuthenticated, async (req, res) => {
             totalPrice: product.price
         });
         await order.save();
-
-        // Gửi thông báo Telegram đến TẤT CẢ người đã đăng ký
-        const message = `🛒 *ĐƠN HÀNG MỚI!*\n━━━━━━━━━━\n👤 *User:* ${req.session.user.username}\n📦 *Sản phẩm:* ${product.name}\n💰 *Giá:* ${product.price.toLocaleString('vi-VN')} VND\n🕐 *Thời gian:* ${new Date().toLocaleString('vi-VN')}`;
-        sendNotificationToAll(message);
+        console.log(`📦 Đơn hàng mới: ${order._id} - Chờ background job gửi thông báo`);
 
         const products = await Product.find();
         res.render('shop', { 

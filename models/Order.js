@@ -6,6 +6,7 @@ const orderSchema = new mongoose.Schema({
     quantity: { type: Number, default: 1 },
     totalPrice: { type: Number, required: true },
     status: { type: String, enum: ['pending', 'completed', 'cancelled'], default: 'pending' },
+    notified: { type: Boolean, default: false },  // Đánh dấu đã gửi thông báo Telegram chưa
     createdAt: { type: Date, default: Date.now }
 });
 
