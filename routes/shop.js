@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const Product = require('../models/Product');
 const Order = require('../models/Order');
-// Đã xóa sendNotificationToAll - Background job Python sẽ quét DB và gửi thông báo
+// Background job trong notification.js sẽ quét DB và gửi thông báo Telegram
 
 // Middleware kiểm tra đăng nhập
 function isAuthenticated(req, res, next) {
@@ -29,7 +29,7 @@ router.post('/buy/:productId', isAuthenticated, async (req, res) => {
         }
 
         // Tạo đơn hàng (notified mặc định là false)
-        // Background job Python sẽ quét DB và gửi thông báo Telegram
+        // Background job Node.js sẽ quét DB và gửi thông báo Telegram
         const order = new Order({
             user: req.session.user.id,
             product: product._id,

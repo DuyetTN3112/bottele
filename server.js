@@ -9,8 +9,11 @@ const path = require('path');
 const authRoutes = require('./routes/auth');
 const shopRoutes = require('./routes/shop');
 const adminRoutes = require('./routes/admin');
-// Telegram webhook được xử lý bởi Python bot (bot_sheet.py)
-// const { router: telegramRoutes } = require('./routes/telegram');
+const telegramRoutes = require('./routes/telegram');
+
+// Import services
+const { setWebhook, startBackgroundJobs } = require('./services/notification');
+const { connectSheet } = require('./services/googleSheet');
 
 const app = express();
 
@@ -18,6 +21,7 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const DB_URL = process.env.DB_URL;
 const SESSION_SECRET = process.env.SESSION_SECRET || 'default_secret_key';
+const SHEET_ID = process.env.SHEET_ID;
 
 // ================= MIDDLEWARE =================
 app.set('view engine', 'ejs');
@@ -38,25 +42,84 @@ app.use(session({
 }));
 
 // ================= ROUTES =================
+// Trang chủ - Dashboard đơn giản
 app.get('/', (req, res) => {
-    res.redirect('/auth/login');
+    const serverUrl = process.env.SERVER_URL || process.env.RENDER_EXTERNAL_URL || `http://localhost:${PORT}`;
+    res.send(`
+        <!DOCTYPE html>
+        <html lang="vi">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>FansipanLab Bot Dashboard</title>
+            <style>
+                body { font-family: sans-serif; background-color: #121212; color: #fff; text-align: center; padding: 20px; }
+                .container { max-width: 600px; margin: 0 auto; }
+                .card { background: #1e1e1e; padding: 20px; border-radius: 10px; margin-bottom: 20px; border: 1px solid #333; }
+                h1 { color: #0088cc; }
+                .btn { display: block; width: 100%; padding: 12px; margin: 10px 0; border-radius: 5px; text-decoration: none; color: white; font-weight: bold; box-sizing: border-box; }
+                .btn-sheet { background: #0f9d58; }
+                .btn-tele { background: #0088cc; }
+                .btn-shop { background: #ff5722; }
+                .status { color: #00c853; font-weight: bold; }
+                .link-info { color: #888; font-size: 0.9em; word-break: break-all;}
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <div class="card">
+                    <h1>🤖 Bot FansipanLab</h1>
+                    <p>Trạng thái: <span class="status">● Đang chạy (Node.js)</span></p>
+                    <p class="link-info">Server URL: ${serverUrl}</p>
+                </div>
+                <div class="card">
+                    <a href="https://docs.google.com/spreadsheets/d/${SHEET_ID}" target="_blank" class="btn btn-sheet">📊 Mở Google Sheet</a>
+                    <a href="https://t.me/noti_task_bot" target="_blank" class="btn btn-tele">💬 Chat với Bot</a>
+                    <a href="/shop" class="btn btn-shop">🛒 Vào Shop</a>
+                </div>
+            </div>
+        </body>
+        </html>
+    `);
 });
 
 app.use('/auth', authRoutes);
 app.use('/shop', shopRoutes);
 app.use('/admin', adminRoutes);
-// Telegram webhook được xử lý bởi Python bot (bot_sheet.py)
+app.use('/telegram', telegramRoutes);
+
+// Health check endpoint
+app.get('/health', (req, res) => {
+    res.json({
+        status: 'ok',
+        uptime: process.uptime(),
+        timestamp: new Date().toISOString()
+    });
+});
 
 // ================= KẾT NỐI DATABASE & CHẠY SERVER =================
 mongoose.connect(DB_URL)
-    .then(() => {
+    .then(async () => {
         console.log('✅ Đã kết nối MongoDB thành công!');
         
-        app.listen(PORT, () => {
-            console.log(`🚀 Server đang chạy tại: http://localhost:${PORT}`);
+        // Kết nối Google Sheets
+        await connectSheet();
+        
+        app.listen(PORT, async () => {
+            console.log('='.repeat(50));
+            console.log('🚀 KHỞI ĐỘNG BOT THÔNG BÁO (Node.js)');
+            console.log('='.repeat(50));
+            console.log(`🌐 Server đang chạy tại: http://localhost:${PORT}`);
             console.log(`📝 Đăng ký: http://localhost:${PORT}/auth/register`);
             console.log(`🔐 Đăng nhập: http://localhost:${PORT}/auth/login`);
-            console.log(`\n📦 Đơn hàng mới sẽ được Python bot quét và gửi Telegram`);
+            console.log(`📊 Sheet ID: ${SHEET_ID || 'Chưa cấu hình'}`);
+            console.log('='.repeat(50));
+            
+            // Set webhook Telegram
+            await setWebhook();
+            
+            // Khởi động background jobs
+            startBackgroundJobs();
         });
     })
     .catch((err) => {

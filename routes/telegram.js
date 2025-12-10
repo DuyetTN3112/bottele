@@ -1,104 +1,106 @@
+/**
+ * Telegram Webhook Routes
+ * Xử lý tất cả webhook từ Telegram (thay thế Python bot)
+ */
+
 const express = require('express');
 const router = express.Router();
-const https = require('https');
-const TelegramUser = require('../models/TelegramUser');
-const User = require('../models/User');
+const { sendTelegram } = require('../services/notification');
+const { addUserToSheet, isUserRegistered } = require('../services/googleSheet');
 
 const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN;
+const BOT_PASSWORD = process.env.BOT_PASSWORD;
 
-// Gửi tin nhắn Telegram
-function sendTelegram(chatId, message) {
-    const url = `https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`;
-    const data = JSON.stringify({
-        chat_id: chatId,
-        text: message,
-        parse_mode: 'Markdown'
-    });
-
-    const req = https.request(url, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'Content-Length': Buffer.byteLength(data)
-        }
-    });
-
-    req.on('error', (e) => console.error('❌ Telegram error:', e.message));
-    req.write(data);
-    req.end();
-}
-
-// Webhook nhận tin nhắn từ Telegram
+/**
+ * Webhook nhận tin nhắn từ Telegram
+ * Route: POST /telegram/:token
+ */
 router.post(`/${TELEGRAM_TOKEN}`, async (req, res) => {
     try {
         const update = req.body;
         
-        if (update && update.message) {
-            const msg = update.message;
-            const chatId = msg.chat.id.toString();
-            const chatType = msg.chat.type;
-            const text = (msg.text || '').trim();
-
-            // Chỉ xử lý private chat
-            if (chatType !== 'private') {
-                return res.status(200).send('OK');
+        if (!update || !update.message) {
+            return res.status(200).send('OK');
+        }
+        
+        const msg = update.message;
+        const chatId = msg.chat.id.toString();
+        const chatType = msg.chat.type;
+        const text = (msg.text || '').trim();
+        const name = msg.chat.title || msg.from?.first_name || 'User';
+        
+        // ========== XỬ LÝ GROUP ==========
+        if (chatType === 'group' || chatType === 'supergroup') {
+            const isRegistered = await isUserRegistered(chatId);
+            
+            if (!isRegistered) {
+                const added = await addUserToSheet(chatId, name, 'Group');
+                if (added) {
+                    await sendTelegram(chatId, '✅ Group đã được đăng ký nhận thông báo!');
+                    console.log(`✅ Group mới đăng ký: ${name} (${chatId})`);
+                }
             }
-
-            // Kiểm tra đã đăng ký chưa
-            const existingUser = await TelegramUser.findOne({ chatId });
-
-            // Lệnh /login username password
-            if (text.startsWith('/login ')) {
-                const parts = text.split(' ');
-                if (parts.length === 3) {
-                    const [, username, password] = parts;
-                    
-                    // Kiểm tra account admin trong DB
-                    const adminUser = await User.findOne({ username, role: 'admin' });
-                    
-                    if (adminUser && adminUser.comparePassword(password)) {
-                        if (!existingUser) {
-                            await TelegramUser.create({ chatId, username });
-                            sendTelegram(chatId, `✅ Đăng ký thành công!\n\nXin chào *${username}*, bạn sẽ nhận thông báo khi có đơn hàng mới.`);
-                            console.log(`👤 Admin đăng ký Telegram: ${username} (${chatId})`);
-                        } else {
-                            sendTelegram(chatId, '⚠️ Bạn đã đăng ký rồi.');
-                        }
-                    } else {
-                        sendTelegram(chatId, '❌ Sai username/password hoặc không phải admin!');
+            return res.status(200).send('OK');
+        }
+        
+        // ========== XỬ LÝ PRIVATE CHAT ==========
+        if (chatType === 'private') {
+            const isRegistered = await isUserRegistered(chatId);
+            
+            // Lệnh /login password
+            if (text === `/login ${BOT_PASSWORD}`) {
+                if (!isRegistered) {
+                    const added = await addUserToSheet(chatId, name, 'User');
+                    if (added) {
+                        await sendTelegram(chatId, 
+                            '✅ Đăng ký thành công!\n\n' +
+                            'Bạn sẽ nhận được thông báo khi có đơn hàng mới hoặc sản phẩm mới.'
+                        );
+                        console.log(`✅ User mới đăng ký: ${name} (${chatId})`);
                     }
                 } else {
-                    sendTelegram(chatId, '❌ Sai cú pháp! Dùng: `/login username password`');
+                    await sendTelegram(chatId, '⚠️ Bạn đã đăng ký rồi.');
                 }
             }
             // Lệnh /start
             else if (text.startsWith('/start')) {
-                if (!existingUser) {
-                    sendTelegram(chatId, '🔒 *Bot thông báo đơn hàng*\n\nVui lòng đăng nhập bằng tài khoản admin:\n`/login username password`');
+                if (!isRegistered) {
+                    await sendTelegram(chatId, 
+                        `🔒 *Bot riêng tư*\n\n` +
+                        `Vui lòng đăng ký bằng lệnh:\n` +
+                        `\`/login ${BOT_PASSWORD}\``
+                    );
                 } else {
-                    sendTelegram(chatId, '👋 Bạn đã đăng ký nhận thông báo rồi!');
+                    await sendTelegram(chatId, '👋 Bạn đang online và đã đăng ký nhận thông báo.');
                 }
             }
+            // Lệnh /help
+            else if (text.startsWith('/help')) {
+                await sendTelegram(chatId,
+                    '📖 *Hướng dẫn sử dụng*\n\n' +
+                    '• `/start` - Kiểm tra trạng thái\n' +
+                    '• `/login password` - Đăng ký nhận thông báo\n' +
+                    '• `/help` - Xem hướng dẫn'
+                );
+            }
         }
+        
     } catch (err) {
-        console.error('❌ Webhook error:', err);
+        console.error('❌ Webhook error:', err.message);
     }
-
+    
     res.status(200).send('OK');
 });
 
-// Gửi thông báo đến TẤT CẢ admin đã đăng ký
-async function sendNotificationToAll(message) {
-    try {
-        const users = await TelegramUser.find();
-        console.log(`📤 Gửi thông báo đến ${users.length} admin`);
-        
-        for (const user of users) {
-            sendTelegram(user.chatId, message);
-        }
-    } catch (err) {
-        console.error('❌ Lỗi gửi thông báo:', err);
-    }
-}
+/**
+ * Health check cho Telegram webhook
+ */
+router.get('/health', (req, res) => {
+    res.json({
+        status: 'ok',
+        telegram: TELEGRAM_TOKEN ? 'configured' : 'missing',
+        timestamp: new Date().toISOString()
+    });
+});
 
-module.exports = { router, sendNotificationToAll };
+module.exports = router;
