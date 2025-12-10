@@ -113,64 +113,72 @@ async function monitorOrders() {
  */
 async function monitorSheet() {
     try {
-        const currentRowCount = await getProductRowCount();
+        // Lấy tất cả products từ Sheet
+        const products = await getProductsFromSheet();
+        const currentRowCount = products.length;
         
         if (currentRowCount > lastProductRowCount && lastProductRowCount > 0) {
             console.log(`🔥 Có ${currentRowCount - lastProductRowCount} sản phẩm mới từ Sheet!`);
             
             // Lấy danh sách recipients
             const recipients = await getRecipientsFromSheet();
-            if (recipients.length === 0) {
-                lastProductRowCount = currentRowCount;
-                return;
-            }
-            
-            // Lấy products từ Sheet
-            const products = await getProductsFromSheet();
             
             // Lấy các sản phẩm mới (từ vị trí lastProductRowCount)
             const newProducts = products.slice(lastProductRowCount);
             
             for (const productData of newProducts) {
-                // Lưu vào MongoDB
+                // Kiểm tra sản phẩm đã tồn tại trong MongoDB chưa
+                const existingProduct = await Product.findOne({ name: productData.name });
+                
                 let savedProduct = null;
-                try {
-                    savedProduct = await Product.create({
-                        name: productData.name,
-                        price: productData.price,
-                        description: '', // Không có description trong sheet mới
-                        image: '📦'      // Default emoji
-                    });
-                    console.log(`✅ Đã lưu sản phẩm vào MongoDB: ${productData.name}`);
-                } catch (err) {
-                    console.error(`⚠️ Lỗi lưu product: ${err.message}`);
+                if (existingProduct) {
+                    // Cập nhật giá nếu cần
+                    if (existingProduct.price !== productData.price) {
+                        await Product.findByIdAndUpdate(existingProduct._id, { price: productData.price });
+                        console.log(`🔄 Đã cập nhật sản phẩm: ${productData.name}`);
+                    }
+                    savedProduct = existingProduct;
+                } else {
+                    // Lưu sản phẩm mới vào MongoDB
+                    try {
+                        savedProduct = await Product.create({
+                            name: productData.name,
+                            price: productData.price,
+                            description: '',
+                            image: '📦'
+                        });
+                        console.log(`✅ Đã lưu sản phẩm vào MongoDB: ${productData.name}`);
+                    } catch (err) {
+                        console.error(`⚠️ Lỗi lưu product: ${err.message}`);
+                    }
                 }
                 
-                // Format giá
-                const priceStr = productData.price 
-                    ? productData.price.toLocaleString('vi-VN')
-                    : 'Liên hệ';
-                
-                // Sử dụng timestamp từ Sheet hoặc thời gian hiện tại
-                const timeStr = productData.timestamp || new Date().toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' });
-                
-                let msg = `📦 *SẢN PHẨM MỚI!*
+                // Gửi thông báo nếu có recipients
+                if (recipients.length > 0) {
+                    const priceStr = productData.price 
+                        ? productData.price.toLocaleString('vi-VN')
+                        : 'Liên hệ';
+                    
+                    const timeStr = productData.timestamp || new Date().toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' });
+                    
+                    let msg = `📦 *SẢN PHẨM MỚI!*
 ━━━━━━━━━━
 🏷️ *Tên:* ${productData.name}
 💰 *Giá:* ${priceStr} VND
 🕐 *Thời gian:* ${timeStr}`;
-                
-                if (savedProduct) {
-                    msg += `\n\n✅ Đã thêm vào hệ thống!`;
+                    
+                    if (savedProduct) {
+                        msg += `\n\n✅ Đã thêm vào hệ thống!`;
+                    }
+                    
+                    // Gửi thông báo
+                    let sentCount = 0;
+                    for (const recipient of recipients) {
+                        const success = await sendTelegram(recipient.chatId, msg);
+                        if (success) sentCount++;
+                    }
+                    console.log(`✅ Đã gửi thông báo sản phẩm '${productData.name}' đến ${sentCount} người`);
                 }
-                
-                // Gửi thông báo
-                let sentCount = 0;
-                for (const recipient of recipients) {
-                    const success = await sendTelegram(recipient.chatId, msg);
-                    if (success) sentCount++;
-                }
-                console.log(`✅ Đã gửi thông báo sản phẩm '${productData.name}' đến ${sentCount} người`);
             }
         }
         
@@ -211,20 +219,75 @@ async function setWebhook() {
 }
 
 /**
+ * Đồng bộ tất cả sản phẩm từ Google Sheet vào MongoDB
+ * Chạy khi khởi động server để đảm bảo dữ liệu đồng bộ
+ */
+async function syncAllProductsFromSheet() {
+    try {
+        console.log('🔄 Bắt đầu đồng bộ sản phẩm từ Google Sheet...');
+        
+        const products = await getProductsFromSheet();
+        console.log(`📊 Tìm thấy ${products.length} sản phẩm trong Sheet`);
+        
+        if (products.length === 0) {
+            console.log('⚠️ Không có sản phẩm nào trong Sheet');
+            return;
+        }
+        
+        let addedCount = 0;
+        let existingCount = 0;
+        
+        for (const productData of products) {
+            // Kiểm tra sản phẩm đã tồn tại chưa (theo tên)
+            const existingProduct = await Product.findOne({ name: productData.name });
+            
+            if (existingProduct) {
+                // Cập nhật giá nếu khác
+                if (existingProduct.price !== productData.price) {
+                    await Product.findByIdAndUpdate(existingProduct._id, { price: productData.price });
+                    console.log(`🔄 Đã cập nhật giá sản phẩm: ${productData.name}`);
+                }
+                existingCount++;
+            } else {
+                // Thêm sản phẩm mới
+                await Product.create({
+                    name: productData.name,
+                    price: productData.price,
+                    description: '',
+                    image: '📦'
+                });
+                addedCount++;
+                console.log(`✅ Đã thêm sản phẩm mới: ${productData.name}`);
+            }
+        }
+        
+        console.log(`📊 Kết quả đồng bộ: ${addedCount} mới, ${existingCount} đã có`);
+        
+        // Cập nhật lastProductRowCount sau khi đồng bộ
+        lastProductRowCount = products.length;
+        
+    } catch (err) {
+        console.error('❌ Lỗi đồng bộ sản phẩm từ Sheet:', err.message);
+    }
+}
+
+/**
  * Khởi động background jobs
  */
-function startBackgroundJobs() {
+async function startBackgroundJobs() {
     console.log('🚀 Khởi động Background Jobs...');
     
-    // Khởi tạo số dòng ban đầu từ Sheet
-    getProductRowCount().then(count => {
-        lastProductRowCount = count;
-        console.log(`📊 Sheet product - Dữ liệu ban đầu: ${count} dòng`);
-    });
+    // QUAN TRỌNG: Đồng bộ tất cả sản phẩm từ Sheet vào MongoDB khi khởi động
+    await syncAllProductsFromSheet();
     
     // Đếm đơn hàng chờ thông báo
     Order.countDocuments({ notified: { $ne: true } }).then(count => {
         console.log(`📊 MongoDB - Đơn hàng chờ thông báo: ${count}`);
+    });
+    
+    // Đếm tổng sản phẩm trong DB
+    Product.countDocuments().then(count => {
+        console.log(`📊 MongoDB - Tổng sản phẩm: ${count}`);
     });
     
     // Chạy job mỗi 5 giây
@@ -241,6 +304,7 @@ module.exports = {
     sendNotificationToAll,
     monitorOrders,
     monitorSheet,
+    syncAllProductsFromSheet,
     setWebhook,
     startBackgroundJobs
 };

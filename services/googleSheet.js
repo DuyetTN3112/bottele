@@ -166,8 +166,14 @@ async function getProductsFromSheet() {
             return [];
         }
         
+        // Đảm bảo load đầy đủ header rows
+        await sheet.loadHeaderRow();
+        console.log(`📋 Sheet headers: ${sheet.headerValues.join(', ')}`);
+        
         const rows = await sheet.getRows();
         const products = [];
+        
+        console.log(`📊 Đọc được ${rows.length} dòng từ Sheet "${SHEET_NAME}"`);
         
         for (const row of rows) {
             // Cấu trúc: Cột 0 = Dấu thời gian, Cột 1 = Tên sản phẩm, Cột 2 = Giá tiền
@@ -177,6 +183,8 @@ async function getProductsFromSheet() {
             
             // Parse giá (chỉ lấy số)
             const price = parseInt(priceRaw.toString().replace(/\D/g, '')) || 0;
+            
+            console.log(`  - Row ${row.rowNumber}: name="${name}", price=${price}`);
             
             if (name && name.trim()) {
                 products.push({
@@ -188,6 +196,7 @@ async function getProductsFromSheet() {
             }
         }
         
+        console.log(`✅ Tổng cộng ${products.length} sản phẩm hợp lệ`);
         return products;
     } catch (err) {
         console.error('⚠️ Lỗi lấy products từ Sheet:', err.message);
